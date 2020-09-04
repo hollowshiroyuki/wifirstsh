@@ -1,0 +1,57 @@
+#! /bin/bash
+
+# Fonction pour extraire les infos dans les pages html
+getxmlvalue() {
+    echo $1 |\
+    xmllint --xpath $2 --html - 2>/dev/null |\
+    cut -d\" -f2
+}
+
+# Variables
+csrf_page=`curl -s https://smartcampus.wifirst.net/sessions/new` # On doit récupérer un token unique dans le HTML
+csrf_token_path="//head/meta[@name=\"csrf-token\"]/@content"     # Chemin XPath pour le token
+sys_name_path="//body/form/input[@name=\"username\"]/@value"     # Chemin XPath pour le login interne
+sys_pass_path="//body/form/input[@name=\"password\"]/@value"     # CHemin XPath pour le mdp interne
+success_url="https://smartcampus.wifirst.net/"                   # Url de réussite de la connexion
+error_url="https://connect.wifirst.net/login_error"              # Url d'échec de la connexion
+
+# Lecture des logins
+read -p 'Username: ' usr_name
+read -sp 'Password: ' usr_pass
+echo
+
+# Extraction du token de protection
+csrf_token=`getxmlvalue "$csrf_page" $csrf_token_path`
+echo "CSRF_TOKEN $csrf_token"
+
+# Récupération des cookies de session
+cookies=`curl \
+-s \
+-c cookies.txt \
+-o /dev/null \
+-H "User-Agent: Mozilla" \
+-H "Origin: https://selfcare.wifirst.net" \
+-H "Referer: https://selfcare.wifirst.net/sessions/new" \
+-d "utf8=✓&authenticity_token=$csrf_token&login=$usr_name&password=$usr_pass&remember_me=0" \
+https://selfcare.wifirst.net/sessions`
+
+# Récupération de la page contenant les logins système
+auth_page=`curl -s -b cookies.txt https://connect.wifirst.net/?perform=true`
+
+# Extraction des logins système
+sys_name=`getxmlvalue "$auth_page" $sys_name_path`
+sys_pass=`getxmlvalue "$auth_page" $sys_pass_path`
+echo $sys_name
+echo $sys_pass
+
+# Connexion avec les logins système et les cookies
+result=`curl \
+-s \
+-L \
+-b cookies.txt \
+-o /dev/null \
+-H "User-Agent: Mozilla" \
+-H "Referer: https://connect.wifirst.net/?perform=true" \
+-H "Origin: https://connect.wifirst.net" \
+-d "username=$sys_name&password=$sys_pass&qos_class=0&success_url=$success_url&error_url=$error_url" \
+https://wireless.wifirst.net:8090/goform/HtmlLoginRequest`
